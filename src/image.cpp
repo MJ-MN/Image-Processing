@@ -1,0 +1,167 @@
+#include <cstring>
+#include <fstream>
+
+#include "pixel.hpp"
+#include "image.hpp"
+
+using namespace std;
+
+Image::Image() {
+    memset(&this->header, 0, sizeof(this->header));
+    memset(&this->info, 0, sizeof(this->info));
+    this->ext_info = nullptr;
+    this->pixels = nullptr;
+}
+
+Image::Image(const char *file_name) {
+    this->read(file_name);
+}
+
+Image::~Image() {
+    if (this->pixels != nullptr) {
+        for (int i = 0; i < this->info.height; ++i) {
+            delete[] this->pixels[i];
+        }
+        delete[] this->pixels;
+    }
+    if (this->ext_info != nullptr) {
+        delete[] this->ext_info;
+    }
+}
+
+void Image::read(const char *file_name) {
+    ifstream image_file(file_name);
+    if (image_file) {
+        this->read_header_info(image_file);
+        this->read_data(image_file);
+    } else {
+        throw runtime_error("No such file!");
+    }
+}
+
+void Image::read_header_info(ifstream &ifs) {
+    ifs.read((char *)&this->header, sizeof(header_t));
+    ifs.read((char *)&this->info, sizeof(info_t));
+    int ext_info_size = this->header.offset - sizeof(header_t) - sizeof(info_t);
+    this->ext_info = new uint8_t[ext_info_size];
+    ifs.read((char *)this->ext_info, ext_info_size);
+}
+
+void Image::read_data(ifstream &ifs) {
+    int padding = (this->info.width % 4 == 0) ? 0 : 4 - this->info.width % 4;
+    this->pixels = new Pixel *[this->info.height];
+    for (int i = 0; i < this->info.height; ++i) {
+        this->pixels[i] = new Pixel[this->info.width];
+        for (int j = 0; j < this->info.width; ++j) {
+            this->pixels[i][j].read(ifs);
+        }
+        ifs.ignore(padding);
+    }
+}
+
+void Image::apply_horizontal_filter() {
+    Pixel temp;
+    for (int i = 0; i < this->info.height; ++i) {
+        for (int j = 0; j < this->info.width / 2; ++j) {
+            temp = this->pixels[i][j];
+            this->pixels[i][j] = this->pixels[i][this->info.width - 1 - j];
+            this->pixels[i][this->info.width - 1 - j] = temp;
+        }
+    }
+}
+
+void Image::apply_vertical_filter() {
+    Pixel *temp;
+    for (int i = 0; i < this->info.height / 2; ++i) {
+        temp = this->pixels[i];
+        this->pixels[i] = this->pixels[this->info.height - 1 - i];
+        this->pixels[this->info.height - 1 - i] = temp;
+    }
+}
+
+void Image::apply_sharpen_filter() {
+    Pixel *temp_rows[2];
+    temp_rows[0] = new Pixel[this->info.width];
+    temp_rows[1] = new Pixel[this->info.width];
+    for (int i = 0; i < this->info.height; ++i) {
+        for (int j = 0; j < this->info.width; ++j) {
+            if (i > 1) {
+                this->pixels[i - 2][j] = temp_rows[i % 2][j];
+            }
+            temp_rows[i % 2][j] = this->apply_kernel(i, j, SHARPEN_KERNEL);
+        }
+    }
+    for (int i = this->info.height - 2; i < this->info.height; ++i) {
+        for (int j = 0; j < this->info.width; ++j) {
+            this->pixels[i][j] = temp_rows[i % 2][j];
+        }
+    }
+    delete[] temp_rows[0];
+    delete[] temp_rows[1];
+}
+
+Pixel Image::apply_kernel(int row, int col, const int kernel[3][3]) {
+    Pixel sum;
+    for (int i = 0; i < 3; ++i) {
+        for (int j = 0; j < 3; ++j) {
+            if (row + i - 1 < 0 ||
+                col + j - 1 < 0 ||
+                row + i > this->info.height ||
+                col + j > this->info.width) continue;
+            sum += this->pixels[row + i - 1][col + j - 1] * kernel[i][j];
+        }
+    }
+    sum.check_boundaries();
+    return sum;
+}
+
+void Image::apply_sepia_filter() {
+    for (int i = 0; i < this->info.height; ++i) {
+        for (int j = 0; j < this->info.width; ++j) {
+            this->pixels[i][j].apply_matrix(SEPIA_MATRIX);
+        }
+    }
+}
+
+void Image::apply_x_mark() {
+    this->pixels[0][0].set_color(WHITE_COLOR);
+    float m = (float)this->info.height / (float)this->info.width;
+    for (int i = 0; i < this->info.height; ++i) {
+        for (int j = 0; j < this->info.width; ++j) {
+            if ((m * j - i > -1 && m * j - i < 1) ||
+                ((this->info.height - m * j - i > -1) &&
+                 (this->info.height - m * j - i < 1))) {
+                this->pixels[i][j].set_color(WHITE_COLOR);
+            }
+        }
+    }
+}
+
+void Image::write(const char *file_name) {
+    ofstream image_file(file_name);
+    if (image_file) {
+        this->write_header_info(image_file);
+        this->write_data(image_file);
+    } else {
+        throw runtime_error("Cannot create file!");
+    }
+}
+
+void Image::write_header_info(ofstream &ofs) {
+    ofs.write((char *)&this->header, sizeof(header_t));
+    ofs.write((char *)&this->info, sizeof(info_t));
+    int ext_info_size = this->header.offset - sizeof(header_t) - sizeof(info_t);
+    ofs.write((char *)this->ext_info, ext_info_size);
+}
+
+void Image::write_data(ofstream &ofs) {
+    int padding = (this->info.width % 4 == 0) ? 0 : 4 - this->info.width % 4;
+    for (int i = 0; i < this->info.height; ++i) {
+        for (int j = 0; j < this->info.width; ++j) {
+            this->pixels[i][j].write(ofs);
+        }
+        for (int p = 0; p < padding; ++p) {
+            ofs.write("0", 1);
+        }
+    }
+}
