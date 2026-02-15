@@ -48,7 +48,9 @@ void Image::read_header_info(ifstream &ifs) {
 }
 
 void Image::read_data(ifstream &ifs) {
-    int padding = (this->info.width % 4 == 0) ? 0 : 4 - this->info.width % 4;
+    int padding = ((this->info.width * 3) % 4 == 0) ?
+                  0 :
+                  4 - (this->info.width * 3) % 4;
     this->pixels = new Pixel *[this->info.height];
     for (int i = 0; i < this->info.height; ++i) {
         this->pixels[i] = new Pixel[this->info.width];
@@ -155,7 +157,9 @@ void Image::write_header_info(ofstream &ofs) {
 }
 
 void Image::write_data(ofstream &ofs) {
-    int padding = (this->info.width % 4 == 0) ? 0 : 4 - this->info.width % 4;
+    int padding = ((this->info.width * 3) % 4 == 0) ?
+                  0 :
+                  4 - (this->info.width * 3) % 4;
     for (int i = 0; i < this->info.height; ++i) {
         for (int j = 0; j < this->info.width; ++j) {
             this->pixels[i][j].write(ofs);
