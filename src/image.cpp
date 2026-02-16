@@ -1,5 +1,6 @@
 #include <cstring>
 #include <fstream>
+#include <thread>
 
 #include "pixel.hpp"
 #include "image.hpp"
@@ -62,8 +63,25 @@ void Image::read_data(ifstream &ifs) {
 }
 
 void Image::apply_horizontal_filter() {
+    thread threads[THREAD_COUNT];
+    int chunk_size = (this->info.height % THREAD_COUNT > 1) ? 
+                     this->info.height / THREAD_COUNT + 1 :
+                     this->info.height / THREAD_COUNT;
+    int i = 0;
+    for (i = 0; i < THREAD_COUNT - 1; ++i) {
+        threads[i] = thread(&Image::apply_horizontal_filter_prl, this,
+                            i * chunk_size, (i + 1) * chunk_size);
+    }
+    threads[i] = thread(&Image::apply_horizontal_filter_prl, this,
+                        i * chunk_size, this->info.height);
+    for (i = 0; i < THREAD_COUNT; ++i) {
+        threads[i].join();
+    }
+}
+
+void Image::apply_horizontal_filter_prl(int start_row, int end_row) {
     Pixel temp;
-    for (int i = 0; i < this->info.height; ++i) {
+    for (int i = start_row; i < end_row; ++i) {
         for (int j = 0; j < this->info.width / 2; ++j) {
             temp = this->pixels[i][j];
             this->pixels[i][j] = this->pixels[i][this->info.width - 1 - j];
@@ -73,8 +91,25 @@ void Image::apply_horizontal_filter() {
 }
 
 void Image::apply_vertical_filter() {
+    thread threads[THREAD_COUNT];
+    int chunk_size = ((this->info.height / 2) % THREAD_COUNT > 1) ? 
+                     this->info.height / 2 / THREAD_COUNT + 1:
+                     this->info.height / 2 / THREAD_COUNT;
+    int i = 0;
+    for (i = 0; i < THREAD_COUNT - 1; ++i) {
+        threads[i] = thread(&Image::apply_vertical_filter_prl, this,
+                            i * chunk_size, (i + 1) * chunk_size);
+    }
+    threads[i] = thread(&Image::apply_vertical_filter_prl, this,
+                        i * chunk_size, this->info.height / 2);
+    for (i = 0; i < THREAD_COUNT; ++i) {
+        threads[i].join();
+    }
+}
+
+void Image::apply_vertical_filter_prl(int start_row, int end_row) {
     Pixel *temp;
-    for (int i = 0; i < this->info.height / 2; ++i) {
+    for (int i = start_row; i < end_row; ++i) {
         temp = this->pixels[i];
         this->pixels[i] = this->pixels[this->info.height - 1 - i];
         this->pixels[this->info.height - 1 - i] = temp;
@@ -82,18 +117,35 @@ void Image::apply_vertical_filter() {
 }
 
 void Image::apply_sharpen_filter() {
+    thread threads[THREAD_COUNT];
+    int chunk_size = (this->info.height % THREAD_COUNT > 1) ? 
+                     this->info.height / THREAD_COUNT + 1:
+                     this->info.height / THREAD_COUNT;
+    int i = 0;
+    for (i = 0; i < THREAD_COUNT - 1; ++i) {
+        threads[i] = thread(&Image::apply_sharpen_filter_prl, this,
+                            i * chunk_size, (i + 1) * chunk_size);
+    }
+    threads[i] = thread(&Image::apply_sharpen_filter_prl, this,
+                        i * chunk_size, this->info.height);
+    for (i = 0; i < THREAD_COUNT; ++i) {
+        threads[i].join();
+    }
+}
+
+void Image::apply_sharpen_filter_prl(int start_row, int end_row) {
     Pixel *temp_rows[2];
     temp_rows[0] = new Pixel[this->info.width];
     temp_rows[1] = new Pixel[this->info.width];
-    for (int i = 0; i < this->info.height; ++i) {
+    for (int i = start_row; i < end_row; ++i) {
         for (int j = 0; j < this->info.width; ++j) {
-            if (i > 1) {
+            if (i > start_row + 1) {
                 this->pixels[i - 2][j] = temp_rows[i % 2][j];
             }
             temp_rows[i % 2][j] = this->apply_kernel(i, j, SHARPEN_KERNEL);
         }
     }
-    for (int i = this->info.height - 2; i < this->info.height; ++i) {
+    for (int i = end_row - 2; i < end_row; ++i) {
         for (int j = 0; j < this->info.width; ++j) {
             this->pixels[i][j] = temp_rows[i % 2][j];
         }
@@ -118,7 +170,24 @@ Pixel Image::apply_kernel(int row, int col, const int kernel[3][3]) {
 }
 
 void Image::apply_sepia_filter() {
-    for (int i = 0; i < this->info.height; ++i) {
+    thread threads[THREAD_COUNT];
+    int chunk_size = (this->info.height % THREAD_COUNT > 1) ? 
+                     this->info.height / THREAD_COUNT + 1:
+                     this->info.height / THREAD_COUNT;
+    int i = 0;
+    for (i = 0; i < THREAD_COUNT - 1; ++i) {
+        threads[i] = thread(&Image::apply_sepia_filter_prl, this,
+                            i * chunk_size, (i + 1) * chunk_size);
+    }
+    threads[i] = thread(&Image::apply_sepia_filter_prl, this,
+                        i * chunk_size, this->info.height);
+    for (i = 0; i < THREAD_COUNT; ++i) {
+        threads[i].join();
+    }
+}
+
+void Image::apply_sepia_filter_prl(int start_row, int end_row) {
+    for (int i = start_row; i < end_row; ++i) {
         for (int j = 0; j < this->info.width; ++j) {
             this->pixels[i][j].apply_matrix(SEPIA_MATRIX);
         }
@@ -126,9 +195,25 @@ void Image::apply_sepia_filter() {
 }
 
 void Image::apply_x_mark() {
-    this->pixels[0][0].set_color(WHITE_COLOR);
+    thread threads[THREAD_COUNT];
+    int chunk_size = (this->info.height % THREAD_COUNT > 1) ? 
+                     this->info.height / THREAD_COUNT + 1:
+                     this->info.height / THREAD_COUNT;
+    int i = 0;
+    for (i = 0; i < THREAD_COUNT - 1; ++i) {
+        threads[i] = thread(&Image::apply_x_mark_prl, this,
+                            i * chunk_size, (i + 1) * chunk_size);
+    }
+    threads[i] = thread(&Image::apply_x_mark_prl, this,
+                        i * chunk_size, this->info.height);
+    for (i = 0; i < THREAD_COUNT; ++i) {
+        threads[i].join();
+    }
+}
+
+void Image::apply_x_mark_prl(int start_row, int end_row) {
     float m = (float)this->info.height / (float)this->info.width;
-    for (int i = 0; i < this->info.height; ++i) {
+    for (int i = start_row; i < end_row; ++i) {
         for (int j = 0; j < this->info.width; ++j) {
             if ((m * j - i > -1 && m * j - i < 1) ||
                 ((this->info.height - m * j - i > -1) &&

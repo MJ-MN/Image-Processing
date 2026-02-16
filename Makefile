@@ -14,10 +14,10 @@ PROJECT_NAME := ImageProcessor.out
 EXE_FILE     := $(BINDIR)/$(PROJECT_NAME)
 
 # Flags
-CXXFLAGS     := --std=c++11 -Wall -Wextra
+CXXFLAGS     := -std=c++11 -Wall -Wextra -pthread
 CPPFLAGS     := -I$(INCDIR)
 LDFLAGS      :=
-LDLIBS       :=
+LDLIBS       := -pthread
 
 # Sources
 SOURCES     := $(shell find $(SRCDIR) -type f -name '*.cpp')

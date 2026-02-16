@@ -1,5 +1,7 @@
 #pragma once
 
+const int THREAD_COUNT = 4;
+
 const int SHARPEN_KERNEL[3][3] = {
     {0, -1, 0},
     {-1, 5, -1},
@@ -61,4 +63,9 @@ private:
     Pixel apply_kernel(int row, int col, const int kernel[3][3]);
     void write_header_info(std::ofstream &ofs);
     void write_data(std::ofstream &ofs);
+    void apply_horizontal_filter_prl(int start_row, int end_row);
+    void apply_vertical_filter_prl(int start_row, int end_row);
+    void apply_sharpen_filter_prl(int start_row, int end_row);
+    void apply_sepia_filter_prl(int start_row, int end_row);
+    void apply_x_mark_prl(int start_row, int end_row);
 };
