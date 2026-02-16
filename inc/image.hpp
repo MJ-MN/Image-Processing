@@ -1,5 +1,7 @@
 #pragma once
 
+#define PTHREAD
+
 const int THREAD_COUNT = 4;
 
 const int SHARPEN_KERNEL[3][3] = {
@@ -40,6 +42,16 @@ typedef struct {
 } info_t;
 #pragma pack(pop)
 
+#ifdef PTHREAD
+class Image;
+
+typedef struct {
+    Image *image;
+    int start_row;
+    int end_row;
+} thread_struct_t;
+#endif
+
 class Image {
 public:
     Image();
@@ -63,9 +75,17 @@ private:
     Pixel apply_kernel(int row, int col, const int kernel[3][3]);
     void write_header_info(std::ofstream &ofs);
     void write_data(std::ofstream &ofs);
+    #ifndef PTHREAD
     void apply_horizontal_filter_prl(int start_row, int end_row);
     void apply_vertical_filter_prl(int start_row, int end_row);
     void apply_sharpen_filter_prl(int start_row, int end_row);
     void apply_sepia_filter_prl(int start_row, int end_row);
     void apply_x_mark_prl(int start_row, int end_row);
+    #else
+    static void *apply_horizontal_filter_prl(void *arg);
+    static void *apply_vertical_filter_prl(void *arg);
+    static void *apply_sharpen_filter_prl(void *arg);
+    static void *apply_sepia_filter_prl(void *arg);
+    static void *apply_x_mark_prl(void *arg);
+    #endif
 };

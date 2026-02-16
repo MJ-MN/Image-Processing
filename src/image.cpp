@@ -1,9 +1,14 @@
 #include <cstring>
 #include <fstream>
-#include <thread>
 
 #include "pixel.hpp"
 #include "image.hpp"
+
+#ifndef PTHREAD
+#include <thread>
+#else
+#include <pthread.h>
+#endif
 
 using namespace std;
 
@@ -62,6 +67,7 @@ void Image::read_data(ifstream &ifs) {
     }
 }
 
+#ifndef PTHREAD
 void Image::apply_horizontal_filter() {
     thread threads[THREAD_COUNT];
     int chunk_size = (this->info.height % THREAD_COUNT > 1) ? 
@@ -154,21 +160,6 @@ void Image::apply_sharpen_filter_prl(int start_row, int end_row) {
     delete[] temp_rows[1];
 }
 
-Pixel Image::apply_kernel(int row, int col, const int kernel[3][3]) {
-    Pixel sum;
-    for (int i = 0; i < 3; ++i) {
-        for (int j = 0; j < 3; ++j) {
-            if (row + i - 1 < 0 ||
-                col + j - 1 < 0 ||
-                row + i > this->info.height ||
-                col + j > this->info.width) continue;
-            sum += this->pixels[row + i - 1][col + j - 1] * kernel[i][j];
-        }
-    }
-    sum.check_boundaries();
-    return sum;
-}
-
 void Image::apply_sepia_filter() {
     thread threads[THREAD_COUNT];
     int chunk_size = (this->info.height % THREAD_COUNT > 1) ? 
@@ -222,6 +213,224 @@ void Image::apply_x_mark_prl(int start_row, int end_row) {
             }
         }
     }
+}
+#else
+void Image::apply_horizontal_filter() {
+    pthread_t threads[THREAD_COUNT];
+    int chunk_size = (this->info.height % THREAD_COUNT > 1) ? 
+                     this->info.height / THREAD_COUNT + 1 :
+                     this->info.height / THREAD_COUNT;
+    int i = 0;
+    thread_struct_t *thread_struct = new thread_struct_t[THREAD_COUNT];
+    for (i = 0; i < THREAD_COUNT - 1; ++i) {
+        thread_struct[i].image = this;
+        thread_struct[i].start_row = i * chunk_size;
+        thread_struct[i].end_row = (i + 1) * chunk_size;
+        pthread_create(&threads[i], nullptr, apply_horizontal_filter_prl,
+                       &thread_struct[i]);
+    }
+    thread_struct[i].image = this;
+    thread_struct[i].start_row = i * chunk_size;
+    thread_struct[i].end_row = this->info.height;
+    pthread_create(&threads[i], nullptr, apply_horizontal_filter_prl,
+                   &thread_struct[i]);
+    for (i = 0; i < THREAD_COUNT; ++i) {
+        pthread_join(threads[i], nullptr);
+    }
+    delete[] thread_struct;
+}
+
+void *Image::apply_horizontal_filter_prl(void *arg) {
+    thread_struct_t *thread_struct = static_cast<thread_struct_t *>(arg);
+    Image *image = thread_struct->image;
+    Pixel temp;
+    for (int i = thread_struct->start_row; i < thread_struct->end_row; ++i) {
+        for (int j = 0; j < image->info.width / 2; ++j) {
+            temp = image->pixels[i][j];
+            image->pixels[i][j] = image->pixels[i][image->info.width - 1 - j];
+            image->pixels[i][image->info.width - 1 - j] = temp;
+        }
+    }
+    return nullptr;
+}
+
+void Image::apply_vertical_filter() {
+    pthread_t threads[THREAD_COUNT];
+    int chunk_size = ((this->info.height / 2) % THREAD_COUNT > 1) ? 
+                     this->info.height / 2 / THREAD_COUNT + 1:
+                     this->info.height / 2 / THREAD_COUNT;
+    int i = 0;
+    thread_struct_t *thread_struct = new thread_struct_t[THREAD_COUNT];
+    for (i = 0; i < THREAD_COUNT - 1; ++i) {
+        thread_struct[i].image = this;
+        thread_struct[i].start_row = i * chunk_size;
+        thread_struct[i].end_row = (i + 1) * chunk_size;
+        pthread_create(&threads[i], nullptr, apply_vertical_filter_prl,
+                       &thread_struct[i]);
+    }
+    thread_struct[i].image = this;
+    thread_struct[i].start_row = i * chunk_size;
+    thread_struct[i].end_row = this->info.height / 2;
+    pthread_create(&threads[i], nullptr, apply_vertical_filter_prl,
+                   &thread_struct[i]);
+    for (i = 0; i < THREAD_COUNT; ++i) {
+        pthread_join(threads[i], nullptr);
+    }
+    delete[] thread_struct;
+}
+
+void *Image::apply_vertical_filter_prl(void *arg) {
+    thread_struct_t *thread_struct = static_cast<thread_struct_t *>(arg);
+    Image *image = thread_struct->image;
+    Pixel *temp;
+    for (int i = thread_struct->start_row; i < thread_struct->end_row; ++i) {
+        temp = image->pixels[i];
+        image->pixels[i] = image->pixels[image->info.height - 1 - i];
+        image->pixels[image->info.height - 1 - i] = temp;
+    }
+    return nullptr;
+}
+
+void Image::apply_sharpen_filter() {
+    pthread_t threads[THREAD_COUNT];
+    int chunk_size = (this->info.height % THREAD_COUNT > 1) ? 
+                     this->info.height / THREAD_COUNT + 1:
+                     this->info.height / THREAD_COUNT;
+    int i = 0;
+    thread_struct_t *thread_struct = new thread_struct_t[THREAD_COUNT];
+    for (i = 0; i < THREAD_COUNT - 1; ++i) {
+        thread_struct[i].image = this;
+        thread_struct[i].start_row = i * chunk_size;
+        thread_struct[i].end_row = (i + 1) * chunk_size;
+        pthread_create(&threads[i], nullptr, apply_sharpen_filter_prl,
+                       &thread_struct[i]);
+    }
+    thread_struct[i].image = this;
+    thread_struct[i].start_row = i * chunk_size;
+    thread_struct[i].end_row = this->info.height;
+    pthread_create(&threads[i], nullptr, apply_sharpen_filter_prl,
+                   &thread_struct[i]);
+    for (i = 0; i < THREAD_COUNT; ++i) {
+        pthread_join(threads[i], nullptr);
+    }
+    delete[] thread_struct;
+}
+
+void *Image::apply_sharpen_filter_prl(void *arg) {
+    thread_struct_t *thread_struct = static_cast<thread_struct_t *>(arg);
+    Image *image = thread_struct->image;
+    Pixel *temp_rows[2];
+    temp_rows[0] = new Pixel[image->info.width];
+    temp_rows[1] = new Pixel[image->info.width];
+    for (int i = thread_struct->start_row; i < thread_struct->end_row; ++i) {
+        for (int j = 0; j < image->info.width; ++j) {
+            if (i > thread_struct->start_row + 1) {
+                image->pixels[i - 2][j] = temp_rows[i % 2][j];
+            }
+            temp_rows[i % 2][j] = image->apply_kernel(i, j, SHARPEN_KERNEL);
+        }
+    }
+    for (int i = thread_struct->end_row - 2; i < thread_struct->end_row; ++i) {
+        for (int j = 0; j < image->info.width; ++j) {
+            image->pixels[i][j] = temp_rows[i % 2][j];
+        }
+    }
+    delete[] temp_rows[0];
+    delete[] temp_rows[1];
+    return nullptr;
+}
+
+void Image::apply_sepia_filter() {
+    pthread_t threads[THREAD_COUNT];
+    int chunk_size = (this->info.height % THREAD_COUNT > 1) ? 
+                     this->info.height / THREAD_COUNT + 1:
+                     this->info.height / THREAD_COUNT;
+    int i = 0;
+    thread_struct_t *thread_struct = new thread_struct_t[THREAD_COUNT];
+    for (i = 0; i < THREAD_COUNT - 1; ++i) {
+        thread_struct[i].image = this;
+        thread_struct[i].start_row = i * chunk_size;
+        thread_struct[i].end_row = (i + 1) * chunk_size;
+        pthread_create(&threads[i], nullptr, apply_sepia_filter_prl,
+                       &thread_struct[i]);
+    }
+    thread_struct[i].image = this;
+    thread_struct[i].start_row = i * chunk_size;
+    thread_struct[i].end_row = this->info.height;
+    pthread_create(&threads[i], nullptr, apply_sepia_filter_prl,
+                   &thread_struct[i]);
+    for (i = 0; i < THREAD_COUNT; ++i) {
+        pthread_join(threads[i], nullptr);
+    }
+    delete[] thread_struct;
+}
+
+void *Image::apply_sepia_filter_prl(void *arg) {
+    thread_struct_t *thread_struct = static_cast<thread_struct_t *>(arg);
+    Image *image = thread_struct->image;
+    for (int i = thread_struct->start_row; i < thread_struct->end_row; ++i) {
+        for (int j = 0; j < image->info.width; ++j) {
+            image->pixels[i][j].apply_matrix(SEPIA_MATRIX);
+        }
+    }
+    return nullptr;
+}
+
+void Image::apply_x_mark() {
+    pthread_t threads[THREAD_COUNT];
+    int chunk_size = (this->info.height % THREAD_COUNT > 1) ? 
+                     this->info.height / THREAD_COUNT + 1:
+                     this->info.height / THREAD_COUNT;
+    int i = 0;
+    thread_struct_t *thread_struct = new thread_struct_t[THREAD_COUNT];
+    for (i = 0; i < THREAD_COUNT - 1; ++i) {
+        thread_struct[i].image = this;
+        thread_struct[i].start_row = i * chunk_size;
+        thread_struct[i].end_row = (i + 1) * chunk_size;
+        pthread_create(&threads[i], nullptr, apply_x_mark_prl,
+                       &thread_struct[i]);
+    }
+    thread_struct[i].image = this;
+    thread_struct[i].start_row = i * chunk_size;
+    thread_struct[i].end_row = this->info.height;
+    pthread_create(&threads[i], nullptr, apply_x_mark_prl,
+                   &thread_struct[i]);
+    for (i = 0; i < THREAD_COUNT; ++i) {
+        pthread_join(threads[i], nullptr);
+    }
+    delete[] thread_struct;
+}
+
+void *Image::apply_x_mark_prl(void *arg) {
+    thread_struct_t *thread_struct = static_cast<thread_struct_t *>(arg);
+    Image *image = thread_struct->image;
+    float m = (float)image->info.height / (float)image->info.width;
+    for (int i = thread_struct->start_row; i < thread_struct->end_row; ++i) {
+        for (int j = 0; j < image->info.width; ++j) {
+            if ((m * j - i > -1 && m * j - i < 1) ||
+                ((image->info.height - m * j - i > -1) &&
+                 (image->info.height - m * j - i < 1))) {
+                image->pixels[i][j].set_color(WHITE_COLOR);
+            }
+        }
+    }
+    return nullptr;
+}
+#endif
+
+Pixel Image::apply_kernel(int row, int col, const int kernel[3][3]) {
+    Pixel sum;
+    for (int i = 0; i < 3; ++i) {
+        for (int j = 0; j < 3; ++j) {
+            if (row + i - 1 < 0 ||
+                col + j - 1 < 0 ||
+                row + i > this->info.height ||
+                col + j > this->info.width) continue;
+            sum += this->pixels[row + i - 1][col + j - 1] * kernel[i][j];
+        }
+    }
+    sum.check_boundaries();
+    return sum;
 }
 
 void Image::write(const char *file_name) {
